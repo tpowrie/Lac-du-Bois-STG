@@ -11,11 +11,8 @@ library(lidR)
 library(future)
 
 ldb_liDATA <- readLAScatalog(".las")
-liDATA
 
 plot(ldb_liDATA, mapview = TRUE)
-
-dir.create("ldb_dem", showWarnings = FALSE)
 
 opt_output_files(ldb_liDATA) <- "01_retile/{XLEFT}_{YBOTTOM}"
 
