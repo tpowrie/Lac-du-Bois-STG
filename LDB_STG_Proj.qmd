@@ -1,0 +1,46 @@
+---
+title: "Lac du Bois STG Habitat Analysis"
+format: html
+editor: visual
+---
+
+### Tile LDB LiDAR data
+
+```{r}
+library(lidR)
+library(future)
+
+ldb_liDATA <- readLAScatalog(".las")
+liDATA
+
+plot(ldb_liDATA, mapview = TRUE)
+
+n_cores <- availableCores() / 2
+plan(multisession, workers = n_cores)
+
+dir.create("ldb_dem", showWarnings = FALSE)
+
+opt_output_files(ldb_liDATA) <- "01_retile/{XLEFT}_{YBOTTOM}"
+
+opt_chunk_size(ldb_liDATA) <- 250
+opt_chunk_buffer(ldb_liDATA) <- 15
+
+opt_chunk_alignment(ldb_liDATA) <- c(500, 500)
+plot(ldb_liDATA, chunk_pattern = TRUE)
+
+ldb_liDATA_tiled <- catalog_retile(ldb_liDATA)
+
+plot(ldb_iDATA_tiled, mapview = TRUE)
+```
+
+### Perform ground point classification
+
+```{r}
+
+```
+
+### Create DEM for Lac du Bois from LiDAR data
+
+```{r}
+
+```
