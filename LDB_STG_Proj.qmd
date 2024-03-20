@@ -41,5 +41,21 @@ ldb_ground <- classify_ground(ldb_tiled, algorithm = csf(sloop_smooth = TRUE))
 ### Create DEM for Lac du Bois from LiDAR data
 
 ```{r}
+opt_output_files(ldb_ground) <- ""
+dem <- rasterize_terrain(ldb_ground, res = 1, algorithm = tin())
+```
 
+Produce Various Terrain-Based Layers from the DEM
+
+```{r}
+library(Rsagacmd)
+library(sf)
+library(tidyverse)
+library(lidR)
+library(future)
+library(terra)
+library(mapview)
+
+dir.create("ta", showWarnings = FALSE)
+dem <- writeRaster(dem, "ta/dem.tif", overwrite = TRUE)
 ```
