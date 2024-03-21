@@ -17,7 +17,9 @@ plot(ldb_liDATA, mapview = TRUE)
 opt_output_files(ldb_liDATA) <- "01_retile/{XLEFT}_{YBOTTOM}"
 
 opt_chunk_size(ldb_liDATA) <- 500
-opt_chunk_buffer(ldb_liDATA) <- 15
+
+#should not use a buffer when tiling, changed buffer to 0 (was 15)
+opt_chunk_buffer(ldb_liDATA) <- 0
 
 opt_chunk_alignment(ldb_liDATA) <- c(500, 500)
 plot(ldb_liDATA, chunk_pattern = TRUE)
@@ -35,6 +37,9 @@ plan(multisession, workers = n_cores)
 
 opt_output_files(ldb_tiled) <- "02_ground/{XLEFT}_{YBOTTOM}"
 
+# here is where we want to add the buffer (only once we want to run other functions than tiling) 
+opt_chunk_buffer(ldb_tiled)<-15
+
 ldb_ground <- classify_ground(ldb_tiled, algorithm = csf(sloop_smooth = TRUE))
 ```
 
@@ -45,7 +50,7 @@ opt_output_files(ldb_ground) <- ""
 dem <- rasterize_terrain(ldb_ground, res = 1, algorithm = tin())
 ```
 
-Produce Various Terrain-Based Layers from the DEM
+### Produce Various Terrain-Based Layers from the DEM
 
 ```{r}
 library(Rsagacmd)
@@ -58,4 +63,103 @@ library(mapview)
 
 dir.create("ta", showWarnings = FALSE)
 dem <- writeRaster(dem, "ta/dem.tif", overwrite = TRUE)
+
+#locate where our saga program and provide proper path
+saga_path <- "C:/Users/Clara/Documents/TRU/Winter 2024/Ecological Modeling/saga-9.3.1_x64/saga_cmd.exe"
+
+# Create an object (saga) which is a list-like object that contains all of the SAGA GIS functions.
+saga <- saga_gis(saga_path, raster_format = "GeoTIFF")
+
+# 1- sink filled DEM:
+dem_preproc <- saga$ta_preprocessor$sink_removal(
+  dem = dem, dem_preproc = "ta/dem_preproc.tif")
+sources(dem_preproc)
+
+# 2- Produce DSM
+# I added a DSM, but we don't have to include it in model
+# just use CHM in model instead
+opt_output_files(ldb_ground) <- ""
+dsm <- rasterize_canopy(ldb_ground, res = 1, algorithm = dsmtin())
+dsm <- writeRaster(dsm, "ta/dsm.tif", overwrite = TRUE)
+
+plot(dsm)
+plot_dtm3d(dsm) # to see it in 3D
+
+
+# 3- Produce CHM
+
+# Normalize heights: 
+opt_chunk_size(ldb_ground) <- 0
+opt_output_files(ldb_ground) <- "03_norm/{*}"
+ldb_norm <- normalize_height(ldb_ground, algorithm = tin())
+
+
+# Create CHM
+opt_output_files(ldb_norm) <- ""
+chm <- rasterize_canopy(ldb_norm, res = 1, algorithm = dsmtin())
+chm <- writeRaster(chm, "ta/chm.tif", overwrite = TRUE)
+
+plot(chm)
+plot_dtm3d(chm) # to see it in 3D
+
+####### Morphometry layers
+# 4- produce slope and aspect layer:
+# If want to take a look at all pieces of this function:
+View(tidy(saga$ta_morphometry$slope_aspect_curvature))
+
+slope_aspect <- saga$ta_morphometry$slope_aspect_curvature(
+  elevation = dem_preproc, slope = "ta/slope.tif", aspect = "ta/aspect.tif", 
+  method = 6, unit_slope = "radians", unit_aspect = "radians",
+  .all_outputs = FALSE)
+
+
+# 5- MRVBF/MRRTF
+# (Multi-Resolution Valley Bottom Flatness/Multi-Resolution Ridge Top Flatness)
+mrvbf_thresh <- mrvbf_threshold(res = res(dem)[1])
+mrvbf <- saga$ta_morphometry$multiresolution_index_of_valley_bottom_flatness_mrvbf(
+  dem = dem_preproc, mrvbf = "ta/mrvbf.tif", mrrtf = "ta/mrrtf.tif", 
+  t_slope = mrvbf_thresh)
+
+# 6- Terrain ruggedness index:
+tri <- saga$ta_morphometry$terrain_ruggedness_index_tri(
+  dem = dem_preproc, tri = "ta/tri.tif")
+
+####### Hydrology layers
+
+### Following 4 lines (tca, sca, so, and cn) needed to create hydrology layers
+### but not needed for modeling
+
+# Total catchment area
+tca <- saga$ta_hydrology$flow_accumulation_top_down(
+  elevation = dem_preproc, flow = "ta/tca_TEMP.tif", .all_outputs = FALSE)
+
+# Specific catchment area
+sca <- saga$ta_hydrology$flow_width_and_specific_catchment_area(
+  dem = dem_preproc, tca = tca, sca = "ta/sca_TEMP.tif", .all_outputs = FALSE)
+
+# Strahler stream order
+so <- saga$ta_channels$strahler_order(
+  dem = dem_preproc, strahler = "ta/strahler_TEMP.tif", .all_outputs = FALSE)
+
+# Channel network
+cn <- saga$ta_channels$channel_network(
+  elevation = dem_preproc, init_grid = so, init_value = 5,
+  chnlntwrk = "ta/cn_TEMP.tif", .all_outputs = FALSE)
+
+# 7- Topographic wetness index
+twi <- saga$ta_hydrology$topographic_wetness_index(
+  slope = slope_aspect$slope, area = sca, twi = "ta/twi.tif")
+
+# 8 - Overland flow distance
+overland_flow <- saga$ta_channels$overland_flow_distance_to_channel_network(
+  elevation = dem_preproc, channels = cn, distance = "ta/o_flow.tif", 
+  disthorz = "ta/h_flow.tif", distvert = "ta/v_flow.tif", boundary = FALSE, 
+  .all_outputs = FALSE)
+
+####### Lighting/visibility layers
+# 9-Topographic openness
+openness <- saga$ta_lighting$topographic_openness(
+  dem = dem_preproc, pos = "ta/openness_pos.tif", neg = "ta/openness_neg.tif")
+openness
+
 ```
