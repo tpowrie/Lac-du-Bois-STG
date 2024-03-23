@@ -65,7 +65,7 @@ dir.create("ta", showWarnings = FALSE)
 dem <- writeRaster(dem, "ta/dem.tif", overwrite = TRUE)
 
 #locate where our saga program and provide proper path
-saga_path <- "C:/Users/Clara/Documents/TRU/Winter 2024/Ecological Modeling/saga-9.3.1_x64/saga_cmd.exe"
+saga_path <- "C:\\Users\\cwbut\\OneDrive - Thompson Rivers University\\Documents\\Eco modelling\\Assignment 8 - Big data, SAGA GIS-20240312\\saga-9.3.2_x64\\saga-9.3.2_x64/saga_cmd.exe"
 
 # Create an object (saga) which is a list-like object that contains all of the SAGA GIS functions.
 saga <- saga_gis(saga_path, raster_format = "GeoTIFF")
@@ -161,5 +161,42 @@ overland_flow <- saga$ta_channels$overland_flow_distance_to_channel_network(
 openness <- saga$ta_lighting$topographic_openness(
   dem = dem_preproc, pos = "ta/openness_pos.tif", neg = "ta/openness_neg.tif")
 openness
+
+```
+
+### Extract the raster data where the points are located
+
+```{r}
+library(raster)
+
+
+# Combine all layers into a single object
+model_layers <- c(
+  dem_preproc, dem, chm, slope_aspect$aspect, mrvbf$mrvbf, mrvbf$mrrtf, tri, tca, sca, so, cn, twi, overland_flow$distance, openness$pos, openness$neg)
+### chm layer produced an error: [rast] extents do not match. This is because I was doing trial runs with the .las file from Assignment 7 and the locations don't overlap.  ldb_norm gave a warning:elements of x are not a spatraster
+### I decides to keep ldb_norm out of the model_layers because of this warning.
+
+
+# Convert .gpkg to a SpatVector object. Lecture 5.
+sf_grouse <- st_read("Sharp-tailed grouse.gpkg") 
+grouse <- vect(sf_grouse) 
+mapview(grouse)
+
+
+# Perform data extraction at each point in each raster layer
+ldb_data <- terra::extract(model_layers, grouse, bind = TRUE) %>% 
+  st_as_sf()
+mapview(ldb_data)
+
+
+
+
+#### All the codes are running well, the only issue is that the .las file I used (from A7) doesn't cover the same area as the grouse geopackage. It would be worth running the codes with the proper .las file, but I don't know how to do that without waiting 3 days for it to run.
+### In order to run model_layers and ldb_data you will need to remove chm from the list above.
+```
+
+### Create a tuned ranger classification probability model using the mlr3 package, employing spatial cross validation in order to eliminate the effects of spatial autocorrelation.
+
+```{r}
 
 ```
