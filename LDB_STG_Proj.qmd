@@ -172,7 +172,7 @@ library(raster)
 
 # Combine all layers into a single object
 model_layers <- c(
-  dem_preproc, dem, chm, slope_aspect$aspect, mrvbf$mrvbf, mrvbf$mrrtf, tri, tca, sca, so, cn, twi, overland_flow$distance, openness$pos, openness$neg)
+  dem_preproc, dem, chm, slope_aspect$aspect, mrvbf$mrvbf, mrvbf$mrrtf, tri, twi, overland_flow$distance, openness$pos, openness$neg)
 ### chm layer produced an error: [rast] extents do not match. This is because I was doing trial runs with the .las file from Assignment 7 and the locations don't overlap.  ldb_norm gave a warning:elements of x are not a spatraster
 ### I decides to keep ldb_norm out of the model_layers because of this warning.
 
