@@ -178,16 +178,16 @@ model_layers <- c(
 
 
 # Convert .gpkg to a SpatVector object. Lecture 5.
-sf_grouse <- st_read("Sharp-tailed grouse.gpkg") 
+sf_grouse <- st_read("Sharp-tailed grouse.gpkg", stringsAsFactors = TRUE) 
 grouse <- vect(sf_grouse) 
 mapview(grouse)
 
 
 # Perform data extraction at each point in each raster layer
-ldb_data <- terra::extract(model_layers, grouse, bind = TRUE) %>% 
+ldb_data <- terra::extract(model_layers, grouse, bind = TRUE, na.rm = TRUE) %>% 
   st_as_sf()
 mapview(ldb_data)
-
+ldb_data <- na.omit(ldb_data)
 
 
 
@@ -198,5 +198,112 @@ mapview(ldb_data)
 ### Create a tuned ranger classification probability model using the mlr3 package, employing spatial cross validation in order to eliminate the effects of spatial autocorrelation.
 
 ```{r}
+#Calen working here
+## First I downloaded all the layers, thanks Clara then brought them into my environment 
+aspect<- raster("ta/ta/aspect.tif")
+aspect <- rast(aspect)
+slope <- raster("ta/ta/slope.tif")
+slope <- rast(slope)
+mrvbf <- raster("ta/ta//mrvbf.tif")
+mrvbf <- rast(mrvbf)
+mrrtf<- raster("ta/ta/mrrtf.tif")
+mrrtf <- rast (mrrtf)
+tri<- raster("ta/ta/tri.tif")
+tri <- rast(tri)
+twi <- raster("ta/ta/twi.tif")
+twi <- rast (twi)
+overlandflow_distance <- raster("ta/ta/o_flow.tif")
+overlandflow_distance <- rast (overlandflow_distance)
+openness_p <- raster("ta/ta/openness_pos.tif")
+openness_p <- rast(openness_p)
+openness_n <- raster("ta/ta/openness_neg.tif")
+openness_n <- rast(openness_n)
 
+#Reran Coopers part here just with new variables 
+model_layers <- c(slope, aspect, mrvbf, mrrtf, tri, twi, overlandflow_distance, openness_p, openness_n)
+
+
+#creating task function
+str(ldb_data)
+ldb_data$presence <- factor(ldb_data$presence)
+tsk_grouse <- as_task_classif_st(ldb_data, target = "presence")
+tsk_grouse
+
+#creating probability learner
+lrn_rf_tune_prob <- lrn("classif.ranger", 
+                        num.trees = to_tune(100, 2000), predict_type = "prob",
+                        mtry = to_tune(1, length(tsk_grouse$feature_names)),
+                        importance = "impurity")
+
+useful_msrs <- c("classif.logloss", "classif.mbrier")
+
+
+#Tuner design
+
+df_design <- expand.grid(
+  num.trees = c(100, 250, 500, 750, 1000, 1500, 2000),
+  mtry = 1:length(tsk_grouse$feature_names))
+
+# Convert to a data.table (same structure as df_design, different object type)
+dt_design <- data.table(df_design)
+
+# Create the tuner object
+tnr_design <- tnr("design_points", design = dt_design)
+
+#Creating cross validation resampling objects 
+cv_inner <- rsmp("cv", folds = 10)
+cv_outer <- rsmp("spcv_coords", folds = 4)
+
+
+#Creating auto tuner object
+
+at_prob <- auto_tuner(
+  tuner = tnr_design,
+  learner = lrn_rf_tune_prob,
+  resampling = cv_inner,
+  measure = msr("classif.logloss"),
+  terminator = trm("none")
+)
+
+#resampling - this takes a long time because i did not set up parallel env.
+rr_prob <- resample(tsk_grouse, at_prob, cv_outer, store_models = TRUE)
+
+rr_prob$aggregate(msrs(useful_msrs))
+
+conf_prob <- rr_prob$prediction()$confusion
+
+rr_prob_results <- extract_inner_tuning_results(rr_prob)
+
+mod_scores_prob <- rr_prob$score(msrs(useful_msrs))
+View(mod_scores_prob)
+
+#best model
+best_lrn_prob <- rr_prob$learners[[which.min(mod_scores_prob$classif.logloss)]]$learner
+best_lrn_prob
+
+imp <- data.frame(Variable = factor(names(imp), levels = rev(unique(names(imp)))),
+                  Importance = imp, row.names = NULL)
+
+imp_plot_prob <- ggplot(imp, aes(x = Importance, y = Variable)) + 
+  geom_bar(stat = "identity")
+
+imp_plot_prob
+
+# Write variable importance to .csv file:
+write.ftable(ftable(conf_prob), file = "confusion_matrix_prob.csv", sep = ",",
+             quote = FALSE)
+
+# Save that plot to a file (for use in reporting)
+ggsave("Variable importance_prob.png", imp_plot_prob, width = 1920, height = 1440,
+       units = "px", dpi = 300)
+
+
+#The final plot!!!
+
+ranger_model <- best_lrn_prob$model
+fun <- function(model, ...) predict(model, ...)$predictions
+prediction_prob_terra <- terra::predict(
+  model_layers, ranger_model, fun = fun, na.rm = TRUE)
+
+plot(prediction_prob_terra)
 ```
