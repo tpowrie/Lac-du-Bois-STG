@@ -200,27 +200,21 @@ ldb_data <- na.omit(ldb_data)
 ```{r}
 #Calen working here
 ## First I downloaded all the layers, thanks Clara then brought them into my environment 
-aspect<- raster("ta/ta/aspect.tif")
-aspect <- rast(aspect)
-slope <- raster("ta/ta/slope.tif")
-slope <- rast(slope)
-mrvbf <- raster("ta/ta//mrvbf.tif")
-mrvbf <- rast(mrvbf)
-mrrtf<- raster("ta/ta/mrrtf.tif")
-mrrtf <- rast (mrrtf)
-tri<- raster("ta/ta/tri.tif")
-tri <- rast(tri)
-twi <- raster("ta/ta/twi.tif")
-twi <- rast (twi)
-overlandflow_distance <- raster("ta/ta/o_flow.tif")
-overlandflow_distance <- rast (overlandflow_distance)
+aspect <- rast("ta/ta/aspect.tif")
+slope <- rast("ta/ta/slope.tif") 
+mrvbf <- rast("ta/ta/mrvbf.tif")
+mrrtf <- rast ("ta/ta/mrrtf.tif")
+tri <- rast("ta/ta/tri.tif")
+twi <- rast ("ta/ta/twi.tif")
+overlandflow_distance <- raster()
+overlandflow_distance <- rast ("ta/ta/o_flow.tif")
 openness_p <- raster("ta/ta/openness_pos.tif")
 openness_p <- rast(openness_p)
 openness_n <- raster("ta/ta/openness_neg.tif")
 openness_n <- rast(openness_n)
-
+chm <- rast("ta/ta/chm.tif")
 #Reran Coopers part here just with new variables 
-model_layers <- c(slope, aspect, mrvbf, mrrtf, tri, twi, overlandflow_distance, openness_p, openness_n)
+model_layers <- c(slope, aspect, mrvbf, mrrtf, tri, twi, overlandflow_distance, openness_p, openness_n, chm)
 
 
 #creating task function
@@ -302,8 +296,12 @@ ggsave("Variable importance_prob.png", imp_plot_prob, width = 1920, height = 144
 
 ranger_model <- best_lrn_prob$model
 fun <- function(model, ...) predict(model, ...)$predictions
-prediction_prob_terra <- terra::predict(
+prediction_prob_terra_stg <- terra::predict(
   model_layers, ranger_model, fun = fun, na.rm = TRUE)
 
+prediction_prob_present <- prediction_prob_terra_stg$TRUE.
+
 plot(prediction_prob_terra)
+
+writeRaster(prediction_prob_present, "prediction.tif", overwrite = TRUE)
 ```
