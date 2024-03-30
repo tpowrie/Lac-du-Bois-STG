@@ -9,6 +9,11 @@ editor: visual
 ```{r}
 library(lidR)
 library(future)
+library(Rsagacmd)
+library(sf)
+library(tidyverse)
+library(terra)
+library(mapview)
 
 ldb_liDATA <- readLAScatalog("LacDuBois.las")
 
@@ -48,21 +53,14 @@ ldb_ground <- classify_ground(ldb_tiled, algorithm = csf(sloop_smooth = TRUE))
 ```{r}
 opt_output_files(ldb_ground) <- ""
 dem <- rasterize_terrain(ldb_ground, res = 1, algorithm = tin())
+
+dir.create("ta", showWarnings = FALSE)
+dem <- writeRaster(dem, "ta/dem.tif", overwrite = TRUE)
 ```
 
 ### Produce Various Terrain-Based Layers from the DEM
 
 ```{r}
-library(Rsagacmd)
-library(sf)
-library(tidyverse)
-library(lidR)
-library(future)
-library(terra)
-library(mapview)
-
-dir.create("ta", showWarnings = FALSE)
-dem <- writeRaster(dem, "ta/dem.tif", overwrite = TRUE)
 
 #locate where our saga program and provide proper path
 saga_path <- "C:\\Users\\cwbut\\OneDrive - Thompson Rivers University\\Documents\\Eco modelling\\Assignment 8 - Big data, SAGA GIS-20240312\\saga-9.3.2_x64\\saga-9.3.2_x64/saga_cmd.exe"
@@ -167,28 +165,33 @@ openness
 ### Extract the raster data where the points are located
 
 ```{r}
-library(raster)
 
+aspect <- rast("ta/ta/aspect.tif")
+slope <- rast("ta/ta/slope.tif") 
+mrvbf <- rast("ta/ta/mrvbf.tif")
+mrrtf <- rast ("ta/ta/mrrtf.tif")
+tri <- rast("ta/ta/tri.tif")
+twi <- rast ("ta/ta/twi.tif")
+overlandflow_distance <- rast ("ta/ta/o_flow.tif")
+openness_p <- rast("ta/ta/openness_pos.tif")
+openness_n <- rast("ta/ta/openness_neg.tif")
+chm <- rast("ta/ta/chm.tif")
 
-# Combine all layers into a single object
-model_layers <- c(
-  dem_preproc, dem, chm, slope_aspect$aspect, mrvbf$mrvbf, mrvbf$mrrtf, tri, twi, overland_flow$distance, openness$pos, openness$neg)
-### chm layer produced an error: [rast] extents do not match. This is because I was doing trial runs with the .las file from Assignment 7 and the locations don't overlap.  ldb_norm gave a warning:elements of x are not a spatraster
-### I decides to keep ldb_norm out of the model_layers because of this warning.
-
+#Reran Coopers part here just with new variables 
+model_layers <- c(slope, aspect, mrvbf, mrrtf, tri, twi, overlandflow_distance, openness_p, openness_n, chm)
 
 # Convert .gpkg to a SpatVector object. Lecture 5.
 sf_grouse <- st_read("Sharp-tailed grouse.gpkg", stringsAsFactors = TRUE) 
 grouse <- vect(sf_grouse) 
 mapview(grouse)
 
-
 # Perform data extraction at each point in each raster layer
 ldb_data <- terra::extract(model_layers, grouse, bind = TRUE, na.rm = TRUE) %>% 
   st_as_sf()
-mapview(ldb_data)
-ldb_data <- na.omit(ldb_data)
 
+mapview(ldb_data)
+
+ldb_data <- na.omit(ldb_data)
 
 
 #### All the codes are running well, the only issue is that the .las file I used (from A7) doesn't cover the same area as the grouse geopackage. It would be worth running the codes with the proper .las file, but I don't know how to do that without waiting 3 days for it to run.
@@ -198,25 +201,6 @@ ldb_data <- na.omit(ldb_data)
 ### Create a tuned ranger classification probability model using the mlr3 package, employing spatial cross validation in order to eliminate the effects of spatial autocorrelation.
 
 ```{r}
-#Calen working here
-## First I downloaded all the layers, thanks Clara then brought them into my environment 
-aspect <- rast("ta/ta/aspect.tif")
-slope <- rast("ta/ta/slope.tif") 
-mrvbf <- rast("ta/ta/mrvbf.tif")
-mrrtf <- rast ("ta/ta/mrrtf.tif")
-tri <- rast("ta/ta/tri.tif")
-twi <- rast ("ta/ta/twi.tif")
-overlandflow_distance <- raster()
-overlandflow_distance <- rast ("ta/ta/o_flow.tif")
-openness_p <- raster("ta/ta/openness_pos.tif")
-openness_p <- rast(openness_p)
-openness_n <- raster("ta/ta/openness_neg.tif")
-openness_n <- rast(openness_n)
-chm <- rast("ta/ta/chm.tif")
-#Reran Coopers part here just with new variables 
-model_layers <- c(slope, aspect, mrvbf, mrrtf, tri, twi, overlandflow_distance, openness_p, openness_n, chm)
-
-
 #creating task function
 str(ldb_data)
 ldb_data$presence <- factor(ldb_data$presence)
@@ -248,9 +232,7 @@ tnr_design <- tnr("design_points", design = dt_design)
 cv_inner <- rsmp("cv", folds = 10)
 cv_outer <- rsmp("spcv_coords", folds = 4)
 
-
 #Creating auto tuner object
-
 at_prob <- auto_tuner(
   tuner = tnr_design,
   learner = lrn_rf_tune_prob,
@@ -264,6 +246,8 @@ rr_prob <- resample(tsk_grouse, at_prob, cv_outer, store_models = TRUE)
 
 rr_prob$aggregate(msrs(useful_msrs))
 
+table(leipzig_vector$presence)
+
 conf_prob <- rr_prob$prediction()$confusion
 
 rr_prob_results <- extract_inner_tuning_results(rr_prob)
@@ -275,6 +259,7 @@ View(mod_scores_prob)
 best_lrn_prob <- rr_prob$learners[[which.min(mod_scores_prob$classif.logloss)]]$learner
 best_lrn_prob
 
+imp <- best_lrn_prob$importance()
 imp <- data.frame(Variable = factor(names(imp), levels = rev(unique(names(imp)))),
                   Importance = imp, row.names = NULL)
 
