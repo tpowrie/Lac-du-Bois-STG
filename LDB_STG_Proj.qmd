@@ -51,6 +51,8 @@ ldb_ground <- classify_ground(ldb_tiled, algorithm = csf(sloop_smooth = TRUE))
 ### Create DEM for Lac du Bois from LiDAR data
 
 ```{r}
+ldb_ground <- readLAScatalog("02_ground", chunk_buffer = 15)
+ldb_norm
 opt_output_files(ldb_ground) <- ""
 dem <- rasterize_terrain(ldb_ground, res = 1, algorithm = tin())
 
@@ -63,7 +65,7 @@ dem <- writeRaster(dem, "ta/dem.tif", overwrite = TRUE)
 ```{r}
 
 #locate where our saga program and provide proper path
-saga_path <- "C:\\Users\\cwbut\\OneDrive - Thompson Rivers University\\Documents\\Eco modelling\\Assignment 8 - Big data, SAGA GIS-20240312\\saga-9.3.2_x64\\saga-9.3.2_x64/saga_cmd.exe"
+saga_path <- "C:/SAGA-GIS/saga-9.3.2_x64/saga_cmd.exe"
 
 # Create an object (saga) which is a list-like object that contains all of the SAGA GIS functions.
 saga <- saga_gis(saga_path, raster_format = "GeoTIFF")
@@ -93,6 +95,7 @@ ldb_norm <- normalize_height(ldb_ground, algorithm = tin())
 
 
 # Create CHM
+ldb_norm <- readLAScatalog("03_norm", chunk_buffer = 15)
 opt_output_files(ldb_norm) <- ""
 chm <- rasterize_canopy(ldb_norm, res = 1, algorithm = dsmtin())
 chm <- writeRaster(chm, "ta/chm.tif", overwrite = TRUE)
@@ -213,7 +216,7 @@ lrn_rf_tune_prob <- lrn("classif.ranger",
                         mtry = to_tune(1, length(tsk_grouse$feature_names)),
                         importance = "impurity")
 
-useful_msrs <- c("classif.logloss", "classif.mbrier")
+useful_msrs <- c("classif.auc", "classif.bbrier", "classif.prauc")
 
 
 #Tuner design
@@ -237,7 +240,7 @@ at_prob <- auto_tuner(
   tuner = tnr_design,
   learner = lrn_rf_tune_prob,
   resampling = cv_inner,
-  measure = msr("classif.logloss"),
+  measure = msr("classif.auc"),
   terminator = trm("none")
 )
 
@@ -256,7 +259,7 @@ mod_scores_prob <- rr_prob$score(msrs(useful_msrs))
 View(mod_scores_prob)
 
 #best model
-best_lrn_prob <- rr_prob$learners[[which.min(mod_scores_prob$classif.logloss)]]$learner
+best_lrn_prob <- rr_prob$learners[[which.min(mod_scores_prob$classif.auc)]]$learner
 best_lrn_prob
 
 imp <- best_lrn_prob$importance()
