@@ -2,11 +2,9 @@ Best Model Parameters!
 
 <LearnerClassifRanger:classif.ranger>: Random Forest
 * Model: ranger
-* Parameters: num.threads=1, importance=impurity, num.trees=100,
-  mtry=1
+* Parameters: num.threads=1, importance=impurity, num.trees=250, mtry=1
 * Packages: mlr3, mlr3learners, ranger
 * Predict Types:  response, [prob]
-* Feature Types: logical, integer, numeric, character, factor,
-  ordered
-* Properties: hotstart_backward, importance, multiclass,
-  oob_error, twoclass, weights
+* Feature Types: logical, integer, numeric, character, factor, ordered
+* Properties: hotstart_backward, importance, multiclass, oob_error, twoclass,
+  weights
