@@ -308,3 +308,9 @@ plot(prediction_prob_terra_stg)
 
 writeRaster(prediction_prob_present, "prediction.tif", overwrite = TRUE)
 ```
+```{r}
+#Bibliography
+library(grateful)
+cite_packages(output = "file", citation.style = NULL, out.dir = getwd(), out.format = "docx", omit = "grateful", cite.tidyverse = TRUE, include.RStudio = TRUE, out.file = "Citations")
+```
+
