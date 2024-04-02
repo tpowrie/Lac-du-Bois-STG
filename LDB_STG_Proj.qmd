@@ -14,6 +14,13 @@ library(sf)
 library(tidyverse)
 library(terra)
 library(mapview)
+library(mlr3)
+library(mlr3verse)
+library(mlr3spatial)
+library(mlr3spatiotempcv)
+library(sf)
+library(terra, exclude = "resample")
+library(future)
 
 ldb_liDATA <- readLAScatalog("LacDuBois.las")
 
@@ -192,7 +199,7 @@ mapview(grouse)
 ldb_data <- terra::extract(model_layers, grouse, bind = TRUE, na.rm = TRUE) %>% 
   st_as_sf()
 
-mapview(ldb_data)
+mapview(ldb_data, zcol = "presence")
 
 ldb_data <- na.omit(ldb_data)
 
@@ -240,7 +247,7 @@ at_prob <- auto_tuner(
   tuner = tnr_design,
   learner = lrn_rf_tune_prob,
   resampling = cv_inner,
-  measure = msr("classif.auc"),
+  measure = msr("classif.prauc"),
   terminator = trm("none")
 )
 
@@ -249,9 +256,9 @@ rr_prob <- resample(tsk_grouse, at_prob, cv_outer, store_models = TRUE)
 
 rr_prob$aggregate(msrs(useful_msrs))
 
-table(leipzig_vector$presence)
-
 conf_prob <- rr_prob$prediction()$confusion
+
+conf_prob
 
 rr_prob_results <- extract_inner_tuning_results(rr_prob)
 
@@ -265,9 +272,17 @@ best_lrn_prob
 imp <- best_lrn_prob$importance()
 imp <- data.frame(Variable = factor(names(imp), levels = rev(unique(names(imp)))),
                   Importance = imp, row.names = NULL)
+imp
 
 imp_plot_prob <- ggplot(imp, aes(x = Importance, y = Variable)) + 
-  geom_bar(stat = "identity")
+  geom_bar(stat = "identity", fill = "burlywood3") +  
+  labs(x = "Importance", y = "Variable") + 
+  theme_minimal() +  
+  theme(axis.text = element_text(size = 9),
+        axis.title = element_text(size = 10, face = "bold"),
+        plot.title = element_text(size = 11, face = "bold", hjust = 0.5))+
+  scale_y_discrete(labels = c("Elevation", "MRVBF", "Negative Topographic Openness", "Slope", "Aspect", "Terrain Ruggeness Index", "Topographic Wetness Index", "Positive Topographic Openness", "MRRTF", "Overland Flow Distance"))
+
 
 imp_plot_prob
 
@@ -289,7 +304,7 @@ prediction_prob_terra_stg <- terra::predict(
 
 prediction_prob_present <- prediction_prob_terra_stg$TRUE.
 
-plot(prediction_prob_terra)
+plot(prediction_prob_terra_stg)
 
 writeRaster(prediction_prob_present, "prediction.tif", overwrite = TRUE)
 ```
