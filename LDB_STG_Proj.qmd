@@ -158,7 +158,7 @@ cn <- saga$ta_channels$channel_network(
 twi <- saga$ta_hydrology$topographic_wetness_index(
   slope = slope_aspect$slope, area = sca, twi = "ta/twi.tif")
 
-# 8 - Overland flow distance
+# 8 - Overland flow distanc
 overland_flow <- saga$ta_channels$overland_flow_distance_to_channel_network(
   elevation = dem_preproc, channels = cn, distance = "ta/o_flow.tif", 
   disthorz = "ta/h_flow.tif", distvert = "ta/v_flow.tif", boundary = FALSE, 
@@ -223,6 +223,13 @@ lrn_rf_tune_prob <- lrn("classif.ranger",
                         mtry = to_tune(1, length(tsk_grouse$feature_names)),
                         importance = "impurity")
 
+avail_msrs <- as.data.table(msrs())[
+  task_type == "classif" & 
+    predict_type == "prob" &
+    task_properties == "twoclass"]
+
+View(avail_msrs)
+
 useful_msrs <- c("classif.auc", "classif.bbrier", "classif.prauc")
 
 
@@ -247,7 +254,7 @@ at_prob <- auto_tuner(
   tuner = tnr_design,
   learner = lrn_rf_tune_prob,
   resampling = cv_inner,
-  measure = msr("classif.prauc"),
+  measure = msr("classif.auc"),
   terminator = trm("none")
 )
 
@@ -281,7 +288,7 @@ imp_plot_prob <- ggplot(imp, aes(x = Importance, y = Variable)) +
   theme(axis.text = element_text(size = 9),
         axis.title = element_text(size = 10, face = "bold"),
         plot.title = element_text(size = 11, face = "bold", hjust = 0.5))+
-  scale_y_discrete(labels = c("Elevation", "MRVBF", "Negative Topographic Openness", "Slope", "Aspect", "Terrain Ruggeness Index", "Topographic Wetness Index", "Positive Topographic Openness", "MRRTF", "Overland Flow Distance"))
+  scale_y_discrete(labels = c("Canopy Height Model", "MRVBF", "Negative Topographic Openness", "Slope", "Aspect", "Terrain Ruggeness Index", "Topographic Wetness Index", "Positive Topographic Openness", "MRRTF", "Overland Flow Distance"))
 
 
 imp_plot_prob
@@ -308,9 +315,9 @@ plot(prediction_prob_terra_stg)
 
 writeRaster(prediction_prob_present, "prediction.tif", overwrite = TRUE)
 ```
+
 ```{r}
 #Bibliography
 library(grateful)
 cite_packages(output = "file", citation.style = NULL, out.dir = getwd(), out.format = "docx", omit = "grateful", cite.tidyverse = TRUE, include.RStudio = TRUE, out.file = "Citations")
 ```
-
