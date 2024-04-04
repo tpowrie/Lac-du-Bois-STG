@@ -21,6 +21,7 @@ library(mlr3spatiotempcv)
 library(sf)
 library(terra, exclude = "resample")
 library(future)
+library(dplyr)
 
 ldb_liDATA <- readLAScatalog("LacDuBois.las")
 
@@ -176,16 +177,16 @@ openness
 
 ```{r}
 
-aspect <- rast("ta/ta/aspect.tif")
-slope <- rast("ta/ta/slope.tif") 
-mrvbf <- rast("ta/ta/mrvbf.tif")
-mrrtf <- rast ("ta/ta/mrrtf.tif")
-tri <- rast("ta/ta/tri.tif")
-twi <- rast ("ta/ta/twi.tif")
-overlandflow_distance <- rast ("ta/ta/o_flow.tif")
-openness_p <- rast("ta/ta/openness_pos.tif")
-openness_n <- rast("ta/ta/openness_neg.tif")
-chm <- rast("ta/ta/chm.tif")
+aspect <- rast("aspect.tif")
+slope <- rast("slope.tif") 
+mrvbf <- rast("mrvbf.tif")
+mrrtf <- rast ("mrrtf.tif")
+tri <- rast("tri.tif")
+twi <- rast ("twi.tif")
+overlandflow_distance <- rast ("o_flow.tif")
+openness_p <- rast("openness_pos.tif")
+openness_n <- rast("openness_neg.tif")
+chm <- rast("chm.tif")
 
 #Reran Coopers part here just with new variables 
 model_layers <- c(slope, aspect, mrvbf, mrrtf, tri, twi, overlandflow_distance, openness_p, openness_n, chm)
@@ -203,9 +204,6 @@ mapview(ldb_data, zcol = "presence")
 
 ldb_data <- na.omit(ldb_data)
 
-
-#### All the codes are running well, the only issue is that the .las file I used (from A7) doesn't cover the same area as the grouse geopackage. It would be worth running the codes with the proper .las file, but I don't know how to do that without waiting 3 days for it to run.
-### In order to run model_layers and ldb_data you will need to remove chm from the list above.
 ```
 
 ### Create a tuned ranger classification probability model using the mlr3 package, employing spatial cross validation in order to eliminate the effects of spatial autocorrelation.
@@ -232,7 +230,6 @@ View(avail_msrs)
 
 useful_msrs <- c("classif.auc", "classif.bbrier", "classif.prauc")
 
-
 #Tuner design
 
 df_design <- expand.grid(
@@ -250,33 +247,46 @@ cv_inner <- rsmp("cv", folds = 10)
 cv_outer <- rsmp("spcv_coords", folds = 4)
 
 #Creating auto tuner object
-at_prob <- auto_tuner(
+at_prob_brier <- auto_tuner(
   tuner = tnr_design,
   learner = lrn_rf_tune_prob,
   resampling = cv_inner,
-  measure = msr("classif.auc"),
+  measure = msr("classif.bbrier"),
   terminator = trm("none")
 )
 
+outer_cores <- min(4, availableCores())
+inner_cores <- floor(availableCores() / outer_cores)
+
+plan(list(
+  tweak("multisession", workers = outer_cores),
+  tweak("multisession", workers = inner_cores)
+))
+
 #resampling - this takes a long time because i did not set up parallel env.
-rr_prob <- resample(tsk_grouse, at_prob, cv_outer, store_models = TRUE)
+rr_prob_brier <- resample(tsk_grouse, at_prob_brier, cv_outer, store_models = TRUE)
 
-rr_prob$aggregate(msrs(useful_msrs))
+rr_prob_brier$aggregate(msrs(useful_msrs))
 
-conf_prob <- rr_prob$prediction()$confusion
+conf_prob_brier <- rr_prob_brier$prediction()$confusion
 
-conf_prob
+conf_prob_brier
 
-rr_prob_results <- extract_inner_tuning_results(rr_prob)
+rr_prob_results_brier <- extract_inner_tuning_results(rr_prob_brier)
 
-mod_scores_prob <- rr_prob$score(msrs(useful_msrs))
-View(mod_scores_prob)
+mod_scores_prob_brier <- rr_prob_brier$score(msrs(useful_msrs))
+View(mod_scores_prob_brier)
+
+mod_scores_brier_df <- mod_scores_prob_brier %>%
+  select(c(7, 9, 10, 11))
+
+write.csv(mod_scores_brier_df, "mod_scores_brier_df.csv")
 
 #best model
-best_lrn_prob <- rr_prob$learners[[which.min(mod_scores_prob$classif.auc)]]$learner
-best_lrn_prob
+best_lrn_prob_brier <- rr_prob_brier$learners[[which.min(mod_scores_prob_brier$classif.bbrier)]]$learner
+best_lrn_prob_brier
 
-imp <- best_lrn_prob$importance()
+imp <- best_lrn_prob_brier$importance()
 imp <- data.frame(Variable = factor(names(imp), levels = rev(unique(names(imp)))),
                   Importance = imp, row.names = NULL)
 imp
@@ -288,32 +298,31 @@ imp_plot_prob <- ggplot(imp, aes(x = Importance, y = Variable)) +
   theme(axis.text = element_text(size = 9),
         axis.title = element_text(size = 10, face = "bold"),
         plot.title = element_text(size = 11, face = "bold", hjust = 0.5))+
-  scale_y_discrete(labels = c("Canopy Height Model", "MRVBF", "Negative Topographic Openness", "Slope", "Aspect", "Terrain Ruggeness Index", "Topographic Wetness Index", "Positive Topographic Openness", "MRRTF", "Overland Flow Distance"))
-
+  scale_y_discrete(labels = c(Z = "Canopy Height Model", mrvbf = "MRVBF", openness_neg = "Negative Topographic Openness", slope = "Slope", aspect = "Aspect", tri = "Terrain Ruggeness Index", twi = "Topographic Wetness Index", openness_pos = "Positive Topographic Openness", mrrtf = "MRRTF", o_flow = "Overland Flow Distance"))
 
 imp_plot_prob
 
 # Write variable importance to .csv file:
-write.ftable(ftable(conf_prob), file = "confusion_matrix_prob.csv", sep = ",",
+write.ftable(ftable(conf_prob_brier), file = "confusion_matrix_prob_brier.csv", sep = ",",
              quote = FALSE)
 
 # Save that plot to a file (for use in reporting)
-ggsave("Variable importance_prob.png", imp_plot_prob, width = 1920, height = 1440,
+ggsave("Variable importance_prob_brier.png", imp_plot_prob, width = 1920, height = 1440,
        units = "px", dpi = 300)
 
 
 #The final plot!!!
 
-ranger_model <- best_lrn_prob$model
+ranger_model_brier <- best_lrn_prob_brier$model
 fun <- function(model, ...) predict(model, ...)$predictions
-prediction_prob_terra_stg <- terra::predict(
-  model_layers, ranger_model, fun = fun, na.rm = TRUE)
+prediction_prob_terra_brier <- terra::predict(
+  model_layers, ranger_model_brier, fun = fun, na.rm = TRUE)
 
-prediction_prob_present <- prediction_prob_terra_stg$TRUE.
+prediction_prob_present_brier <- prediction_prob_terra_brier$TRUE.
 
-plot(prediction_prob_terra_stg)
+plot(prediction_prob_terra_brier)
 
-writeRaster(prediction_prob_present, "prediction.tif", overwrite = TRUE)
+writeRaster(prediction_prob_present_brier, "prediction_brier.tif", overwrite = TRUE)
 ```
 
 ```{r}
